@@ -44,3 +44,20 @@ run: build
 .PHONY: mac-prep
 mac-prep:
 	docker buildx create --name mybuilder --driver docker-container --use
+
+.PHONY: helm-install
+helm-install:
+	helm pull oci://ghcr.io/k8sstormcenter/mywebapp #we re pulling the sampleapp not the bobcli
+	helm upgrade --install webapp oci://ghcr.io/k8sstormcenter/mywebapp --version 0.1.0 --namespace webapp --create-namespace
+	rm -rf mywebapp-0.1.0.tgz
+
+
+.PHONY: helm-test
+helm-test:
+	kubectl wait --for=condition=available --timeout=120s deployment/webapp-mywebapp -n webapp
+	@echo "Deployment is ready. Running Helm tests..."
+	helm test webapp -n webapp
+
+.PHONY: helm-uninstall
+helm-uninstall:
+	helm uninstall webapp -n webapp

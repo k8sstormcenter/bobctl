@@ -1,20 +1,22 @@
 apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1                        
 kind: ApplicationProfile                                                         
 metadata:                                                                        
-  annotations:           
+  annotations:                                                                   
     kubescape.io/completion: complete                                            
-    kubescape.io/instance-id: apiVersion-apps/v1/namespace-webapp/kind-ReplicaSet/name-webapp-mywebapp-6d5bc6f895                                           
+    kubescape.io/instance-id: apiVersion-apps/v1/namespace-{{ .Release.Namespace }}/kind-ReplicaSet/name-{{ include "mywebapp.fullname" . }}-6d5bc6f895
+    kubescape.io/resource-size: "249"                                            
     kubescape.io/status: completed                                               
-    kubescape.io/wlid: wlid://cluster-soccluster/namespace-webapp/deployment-webapp-mywebapp                                     
+    kubescape.io/wlid: wlid://cluster-{{ .Values.bob.clusterName }}/namespace-{{ .Release.Namespace }}/deployment-{{ include "mywebapp.fullname" . }}                                    
   labels:                                                                        
     kubescape.io/instance-template-hash: 6d5bc6f895                              
     kubescape.io/workload-api-group: apps                                        
     kubescape.io/workload-api-version: v1                                        
     kubescape.io/workload-kind: Deployment                                       
-    kubescape.io/workload-name: webapp-mywebapp                                  
-    kubescape.io/workload-namespace: webapp                                                                 
-  name: replicaset-webapp-mywebapp-6d5bc6f895                                    
-  namespace: webapp                                                              
+    kubescape.io/workload-name: {{ include "mywebapp.fullname" . }}                                 
+    kubescape.io/workload-namespace: {{ .Release.Namespace }}                                                               
+  name: replicaset-{{ include "mywebapp.fullname" . }}-6d5bc6f895                                    
+  namespace: {{ .Release.Namespace }}                                                             
+  resourceVersion: "1"                                                           
 spec:
   architectures:
   - amd64
@@ -28,8 +30,9 @@ spec:
       endpoint: :8080/ping.php
       headers:
         Host:
-        - webapp-mywebapp.webapp.svc.cluster.local:8080 
-        - 127.0.0.1:8080
+        - {{ include "mywebapp.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}                          
+        - 127.0.0.1:8080     
+        - localhost:8080
       internal: false
       methods:
       - GET
@@ -663,36 +666,6 @@ spec:
     - flags:
       - O_RDONLY
       path: /var/www/html/ping.php
-    rulePolicies:
-      R0001: {}
-      R0002: {}
-      R0003: {}
-      R0004: {}
-      R0005: {}
-      R0006: {}
-      R0007: {}
-      R0008: {}
-      R0009: {}
-      R0010: {}
-      R0011: {}
-      R1000: {}
-      R1001: {}
-      R1002: {}
-      R1003: {}
-      R1004: {}
-      R1005: {}
-      R1006: {}
-      R1007: {}
-      R1008: {}
-      R1009: {}
-      R1010: {}
-      R1011: {}
-      R1012: {}
-      R1015: {}
-      R1030: {}
-    seccompProfile:
-      spec:
-        defaultAction: ""
     syscalls:
     - accept4
     - access
