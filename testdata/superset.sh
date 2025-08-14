@@ -30,6 +30,7 @@ all_execs_json="[]"
 all_opens_json="[]"
 all_endpoints_json="[]"
 
+
 for file in "${FILES[@]}"; do
   norm_file=$(mktemp)
   yq eval '
@@ -43,16 +44,37 @@ for file in "${FILES[@]}"; do
     .spec.containers[0].capabilities |= (. // [] | sort | unique) |
     .spec.containers[0].syscalls |= (. // [] | sort | unique) |
     .spec.containers[0].execs |= (. // [] | unique_by(.path)) |
-    .spec.containers[0].opens |= (. // [] | unique_by(.path)) |
-    .spec.containers[0].endpoints |= (. // [] | sort | unique)
+    .spec.containers[0].opens |= (
+      . // []
+      | map(.path |= sub("\\.\\.[0-9]{4}_[0-9]{2}_[0-9]{2}_[0-9]{2}_[0-9]{2}_[0-9]{2}\\.[0-9]+", "*"))
+      | unique_by(.path)
+    ) |
+    .spec.containers[0].endpoints |= (. // [] | sort | unique)|
+    .spec.containers[0].rules |= (. // [] | sort | unique)
   ' "$file" > "$norm_file"
 
   syscalls=$(yq '.spec.containers[0].syscalls[]' "$norm_file" 2>/dev/null || true)
   capabilities=$(yq '.spec.containers[0].capabilities[]' "$norm_file" 2>/dev/null || true)
+  imageID=$(yq '.spec.containers[0].imageID' "$norm_file" 2>/dev/null || true)
+  imageTag=$(yq '.spec.containers[0].imageTag' "$norm_file" 2>/dev/null || true)
+  containerName=$(yq '.spec.containers[0].name' "$norm_file" 2>/dev/null || true)
+  architecture=$(yq '.spec.architectures[0]' "$norm_file" 2>/dev/null || true)
+  identifiedCallStacks=$(yq '.spec.containers[0].identifiedCallStacks' "$norm_file" 2>/dev/null || true)
+  apiGroup=$(yq '.metadata.labels."kubescape.io/workload-api-group"' "$norm_file" 2>/dev/null || true)
+  apiVersion=$(yq '.metadata.labels."kubescape.io/workload-api-version"' "$norm_file" 2>/dev/null || true)
+  kind=$(yq '.metadata.labels."kubescape.io/workload-kind"' "$norm_file" 2>/dev/null || true)
+  workloadname=$(yq '.metadata.labels."kubescape.io/workload-name"' "$norm_file" 2>/dev/null || true)
+  namespace=$(yq '.metadata.labels."kubescape.io/workload-namespace"' "$norm_file" 2>/dev/null || true)
+  instanceid=$(yq '.metadata.annotations."kubescape.io/instance-id"' "$norm_file" 2>/dev/null || true)
+  wlid=$(yq '.metadata.annotations."kubescape.io/wlid"' "$norm_file" 2>/dev/null || true)
+  name=$(yq '.metadata.name' "$norm_file" 2>/dev/null || true)
+
 
   execs_json=$(yq -o=json '.spec.containers[0].execs' "$norm_file" 2>/dev/null || echo "[]")
   opens_json=$(yq -o=json '.spec.containers[0].opens' "$norm_file" 2>/dev/null || echo "[]")
   endpoints_json=$(yq -o=json '.spec.containers[0].endpoints' "$norm_file" 2>/dev/null || echo "[]")
+  rules_json=$(yq -o=json '.spec.containers[0].rulePolicies' "$norm_file" 2>/dev/null || echo "[]")
+
 
   # Merge execs
   all_execs_json=$(jq -s 'add | unique_by(.path)' <(echo "$all_execs_json") <(echo "$execs_json"))
@@ -73,32 +95,72 @@ superset_capabilities=($(printf "%s\n" "${all_capabilities[@]}" | sort -u))
 superset_execs=$(echo "$all_execs_json" | yq -P '.')
 superset_opens=$(echo "$all_opens_json" | yq -P '.')
 superset_endpoints=$(echo "$all_endpoints_json" | yq -P '.')
+if [ "$(echo "$all_endpoints_json" | jq 'length')" -eq 0 ]; then
+  endpoints_yaml="null"
+else
+  endpoints_yaml=$(echo "$all_endpoints_json" | yq -P '.' | sed 's/^/      /')
+fi
 
-# Todo: make it formatted and idented like a real application profile
+indent_execs() {
+  while IFS= read -r line; do
+    if [[ "$line" =~ "- args" ]]; then
+      echo "    $line"
+    elif [[ "$line" =~ "path" ]]; then
+      echo "    $line"  
+    else
+      echo "  $line"
+    fi
+  done
+}
+
+indent_opens() {
+  while IFS= read -r line; do
+    if [[ "$line" =~ "- flags" ]]; then
+      echo "    $line"
+    elif [[ "$line" =~ "path" ]]; then
+      echo "    $line"  
+    else
+      echo "  $line"
+    fi
+  done      
+}
+
 cat <<EOF > "$OUTPUT_FILE"
 apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
 kind: ApplicationProfile
 metadata:
-  name: superset-bob
-  namespace: bob
+  name: $name
+  namespace: $namespace
   annotations:
     kubescape.io/completion: complete
-    kubescape.io/status: ready
+    kubescape.io/status: completed
+    kubescape.io/instance-id: $instanceid
+    kubescape.io/wlid: $wlid
+  labels:
+    kubescape.io/workload-api-group: $apiGroup
+    kubescape.io/workload-api-version: $apiVersion
+    kubescape.io/workload-kind: $kind
+    kubescape.io/workload-name: $workloadname
+    kubescape.io/workload-namespace: $namespace
 spec:
   architectures:
-    - amd64
+  - $architecture
   containers:
-    - name: redis
-      syscalls:
-$(for s in "${superset_syscalls[@]}"; do echo "        - $s"; done)
-      capabilities:
-$(for c in "${superset_capabilities[@]}"; do echo "        - $c"; done)
-      endpoints:
-$(echo "$superset_endpoints" | sed 's/^/        /')
-      execs:
-$(echo "$superset_execs" | sed 's/^/        /')
-      opens:
-$(echo "$superset_opens" | sed 's/^/        /')
+  - capabilities:
+$(for c in "${superset_capabilities[@]}"; do echo "    - $c"; done)
+    endpoints: $endpoints_yaml
+    execs:
+$(echo "$superset_execs" | indent_execs)
+    identifiedCallStacks: $identifiedCallStacks
+    imageID: $imageID
+    imageTag: $imageTag
+    name: $containerName
+    opens:
+$(echo "$superset_opens" | indent_opens)
+    syscalls:
+$(for s in "${superset_syscalls[@]}"; do echo "    - $s"; done)
 EOF
 
-echo "Superset arrays written to '$OUTPUT_FILE'" 
+echo "Superset arrays written to '$OUTPUT_FILE'"
+#    rulePolicies:
+#$(for r in "${rules_json[@]}"; do echo "     $r"; done)
